@@ -4,9 +4,15 @@ import * as vscode from 'vscode';
 import axios from 'axios';
 import * as cheerio from 'cheerio';
 import * as dotenv from 'dotenv';
+import * as path from 'path';
 
 // Load environment variables from .env file
-dotenv.config();
+const envPath = path.resolve(process.cwd(), '.env');
+const pathNeeded = 'C:/Users/Gabriel_Shahrouzi/Documents/0-git-local-stuff/cs-projects/codeforces-practice-bot/codeforces-practice-bot/.env';
+dotenv.config({ path: pathNeeded });
+require('dotenv').config({path: pathNeeded});
+console.log(envPath);
+console.log('CODEFORCES_USERNAME:', process.env.CODEFORCES_USERNAME);
 
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is executed
@@ -57,49 +63,137 @@ export function activate(context: vscode.ExtensionContext) {
         }
     });
 
-	function getWebviewContent(problemContent: string, cssContent: string): string {
-		return `<!DOCTYPE html>
-	<html lang="en">
-	<head>
-		<meta charset="UTF-8">
-		<meta name="viewport" content="width=device-width, initial-scale=1.0">
-		<title>Codeforces Problem</title>
-		<style>
-			${cssContent}
-		</style>
-	</head>
-	<body>
-		<div class="problem-statement">
-			${problemContent}
-		</div>
-	</body>
-	</html>`;
-	}
+    function getWebviewContent(problemContent: string, cssContent: string): string {
+        return `<!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Codeforces Problem</title>
+            <style>
+                ${cssContent}
+            </style>
+            <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+            <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+            <script>
+                window.MathJax = {
+                    tex: {
+                        inlineMath: [['$', '$'], ['\\(', '\\)']]
+                    },
+                    svg: {
+                        fontCache: 'global'
+                    }
+                };
+            </script>
+        </head>
+        <body>
+            <div class="problem-statement">
+                ${problemContent}
+            </div>
+            <script>
+                document.addEventListener("DOMContentLoaded", function() {
+                    MathJax.typesetPromise();
+                });
+            </script>
+        </body>
+        </html>`;
+    }
+
+    interface Problem {
+        contestId: number;
+        index: string;
+        name: string;
+        type: string;
+        rating: number;
+        tags: string[];
+    }
+    
+    interface SolvedProblem {
+        contestId: number;
+        index: string;
+    }
+    
+    async function fetch1600RatedProblems(): Promise<Problem[]> {
+        try {
+            const rating = 1600;
+            const response = await axios.get(`https://codeforces.com/api/problemset.problems?rating=${rating}`);
+            if (response.data.status !== 'OK') {
+                throw new Error('Failed to fetch problems');
+            }
+    
+            const problems: Problem[] = response.data.result.problems;
+            const filteredProblems = problems.filter((problem: Problem) => problem.rating === 1600);
+    
+            return filteredProblems;
+        } catch (error) {
+            console.error('Error fetching problems:', error);
+            return [];
+        }
+    }
+    
+    async function fetchUserSolvedProblems(handle: string): Promise<SolvedProblem[]> {
+        try {
+            const response = await axios.get(`https://codeforces.com/api/user.status?handle=${handle}`);
+            if (response.data.status !== 'OK') {
+                throw new Error('Failed to fetch user status');
+            }
+    
+            const solvedProblems = response.data.result
+                .filter((submission: any) => submission.verdict === 'OK')
+                .map((submission: any) => ({
+                    contestId: submission.problem.contestId,
+                    index: submission.problem.index
+                }));
+    
+            return solvedProblems;
+        } catch (error) {
+            console.error('Error fetching user solved problems:', error);
+            return [];
+        }
+    }
+    
+    async function getFiltered1600RatedProblems(handle: string) {
+        const problems = await fetch1600RatedProblems();
+        const solvedProblems = await fetchUserSolvedProblems(handle);
+    
+        const solvedProblemSet = new Set(solvedProblems.map((p: SolvedProblem) => `${p.contestId}-${p.index}`));
+        const filteredProblems = problems.filter(problem => !solvedProblemSet.has(`${problem.contestId}-${problem.index}`));
+    
+        return filteredProblems;
+    }
 
     const getProblemDisposable = vscode.commands.registerCommand('codeforces-practice-bot.getProblem', async () => {
         try {
+            let username = process.env.CODEFORCES_USERNAME;
+            if (username === undefined) { username = "gshahrouzi"; }
+            console.log(getFiltered1600RatedProblems(username));
             const response = await axios.get('https://codeforces.com/problemset?tags=1600-1600');
             const $ = cheerio.load(response.data);
             const firstProblemLink = $('a[href^="/problemset/problem/"]').first().attr('href');
-
+    
             if (firstProblemLink) {
                 const problemResponse = await axios.get(`https://codeforces.com${firstProblemLink}`);
                 const problemPage = cheerio.load(problemResponse.data);
-                const problemContent = problemPage('.problem-statement').html();
-
+                let problemContent = problemPage('.problem-statement').html();
+    
                 if (problemContent) {
+                    problemContent = problemContent.replace(/\$\$\$/g, '$$').replace(/\\\$/g, '$');
+                    console.log(problemContent);
+
                     // Fetch the CSS from Codeforces
                     const cssResponse = await axios.get('https://codeforces.com/css/problem-statement.css');
                     const cssContent = cssResponse.data;
-
-                    const panel = vscode.window.createWebviewPanel(
-                        'codeforcesProblem', // Identifies the type of the webview. Used internally
-                        'Codeforces Problem', // Title of the panel displayed to the user
-                        vscode.ViewColumn.One, // Editor column to show the new webview panel in.
-                        {} // Webview options. More on these later.
-                    );
-
-                    // And set its HTML content
+    
+                const panel = vscode.window.createWebviewPanel(
+                    'codeforcesProblem',
+                    'Codeforces Problem',
+                    vscode.ViewColumn.One,
+                    {
+                        enableScripts: true
+                    }
+                );
+    
+                    // Set the HTML content
                     panel.webview.html = getWebviewContent(problemContent, cssContent);
                 } else {
                     vscode.window.showErrorMessage('Failed to extract problem content.');
@@ -111,10 +205,18 @@ export function activate(context: vscode.ExtensionContext) {
             vscode.window.showErrorMessage('An error occurred while fetching the problem.');
             console.error(error);
         }
+
+
     });
 
     context.subscriptions.push(loginDisposable);
     context.subscriptions.push(getProblemDisposable);
+    const getProblemButton = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
+    getProblemButton.text = '$(cloud-download) Get Problem';
+    getProblemButton.command = 'codeforces-practice-bot.getProblem';
+    getProblemButton.tooltip = 'Fetch a random problem from Codeforces';
+    getProblemButton.show();
+    context.subscriptions.push(getProblemButton);
 }
 
 export function deactivate() {}
