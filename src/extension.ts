@@ -5,6 +5,7 @@ import axios from 'axios';
 import * as cheerio from 'cheerio';
 import * as dotenv from 'dotenv';
 import * as path from 'path';
+import qs from 'qs';
 
 // Load environment variables from .env file
 const envPath = path.resolve(process.cwd(), '.env');
@@ -165,14 +166,15 @@ export function activate(context: vscode.ExtensionContext) {
     const getProblemDisposable = vscode.commands.registerCommand('codeforces-practice-bot.getProblem', async () => {
         try {
             let username = process.env.CODEFORCES_USERNAME;
-            if (username === undefined) { username = "gshahrouzi"; }
-            console.log(getFiltered1600RatedProblems(username));
-            const response = await axios.get('https://codeforces.com/problemset?tags=1600-1600');
-            const $ = cheerio.load(response.data);
-            const firstProblemLink = $('a[href^="/problemset/problem/"]').first().attr('href');
-    
-            if (firstProblemLink) {
-                const problemResponse = await axios.get(`https://codeforces.com${firstProblemLink}`);
+            if (username === undefined) {
+                throw new Error("CODEFORCES_USERNAME environment variable is not set.");
+            }
+            let data = await getFiltered1600RatedProblems(username);
+            const problemUrl = `https://codeforces.com/problemset/problem/${data[0].contestId}/${data[0].index}`;
+
+            
+            if (problemUrl) {
+                const problemResponse = await axios.get(problemUrl);
                 const problemPage = cheerio.load(problemResponse.data);
                 let problemContent = problemPage('.problem-statement').html();
     
@@ -205,8 +207,121 @@ export function activate(context: vscode.ExtensionContext) {
             vscode.window.showErrorMessage('An error occurred while fetching the problem.');
             console.error(error);
         }
+    });
 
+    interface Data {
+        handleOrEmail: string;
+        password: string;
+        lastUpdate: number;
+        cookie: string | null;
+        csrfToken: string | null;
+        compileCommand: string;
+        templateFile: string;
+        templateLineNo: number;
+        submitCompiler: number;
+    }
 
+    let data: Data = {
+        handleOrEmail: process.env.CODEFORCES_USERNAME || '',
+        password: process.env.CODEFORCES_PASSWORD || '',
+        lastUpdate: 1603880554122,
+        cookie: null,
+        csrfToken: null,
+        compileCommand: "g++-8 --std=c++14",
+        templateFile: "",
+        templateLineNo: 0,
+        submitCompiler: 54
+    };
+    const baseUrl = "https://codeforces.com";
+    interface Session {
+        cookie: string | null;
+        csrfToken: string | null;
+    }
+    let session: Session = {
+        cookie: null,
+        csrfToken: null,
+    };
+
+    async function login() {
+        const userHandle = data.handleOrEmail;
+        if (userHandle === null || userHandle === undefined || userHandle === '') {
+            return '';
+        }
+        if (!data || !data.cookie || data.cookie === '' || !data.lastUpdate || Date.now() - data.lastUpdate > 3600000) {
+            return getCsrfAndJid()
+            .then(() => {
+                return requestLogin();
+            })
+            .then(() => {
+                data.cookie = session.cookie!;
+                data.csrfToken = session.csrfToken;
+                data.lastUpdate = Date.now();
+                console.log("Time: "+data.lastUpdate);
+                // updateData(data);
+              return data.cookie;
+            });
+        } else {
+          return data.cookie;
+        }
+      }
+
+      function getCsrfAndJid() {
+        return axios
+        .get(baseUrl + "/enter")
+        .then((res: any) => {
+            session.cookie = res["headers"]["set-cookie"][0].split(";")[0];
+            const $ = cheerio.load(res.data);
+            const csrfTokenElement = $("meta[name='X-Csrf-Token']")[0] as cheerio.TagElement;
+            session.csrfToken = csrfTokenElement.attribs["content"];
+            console.log(session);
+          })
+          .catch((err: any) => {
+            console.log(err);
+          });
+      }
+
+      function requestLogin() {
+        console.log("Logging...");
+        const url = baseUrl + "/enter";
+        const user: { handleOrEmail: string, password: string } = {
+            handleOrEmail: process.env.CODEFORCES_USERNAME || '',
+            password: process.env.CODEFORCES_PASSWORD || '',
+        };
+        
+        const options = {
+            headers: {
+                "content-type": "application/x-www-form-urlencoded",
+                Cookie: session.cookie,
+            },
+        };
+        
+        const data = {
+            ...user,
+            csrf_token: session.csrfToken,
+            action: "enter",
+        };
+        
+        return axios
+            .post(url, qs.stringify(data), options)
+            .then((res: any) => {
+                const $ = cheerio.load(res.data);
+                const userId = $($(".lang-chooser a")[2]).html();
+                const csrfTokenElement = $("meta[name='X-Csrf-Token']")[0] as cheerio.TagElement;
+                session.csrfToken = csrfTokenElement.attribs["content"];
+                if (userId === 'Enter') {
+                    session.cookie = '';
+                    console.log("Failed to login user: "+user.handleOrEmail);
+                    return;
+                }      
+                console.log(`Login Successful. Welcome ${userId}!!!`);
+            })
+            .catch((err: any) => {
+                console.log(err);
+            });
+      }      
+
+    const submitProblemDisposable = vscode.commands.registerCommand('codeforces-practice-bot.submitProblem', async () => {
+        login();
     });
 
     context.subscriptions.push(loginDisposable);
@@ -217,6 +332,13 @@ export function activate(context: vscode.ExtensionContext) {
     getProblemButton.tooltip = 'Fetch a random problem from Codeforces';
     getProblemButton.show();
     context.subscriptions.push(getProblemButton);
+
+    const submitProblemButton = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
+    submitProblemButton.text = '$(cloud-upload) Submit Problem';
+    submitProblemButton.command = 'codeforces-practice-bot.submitProblem';
+    submitProblemButton.tooltip = 'Submit a problem to Codeforces';
+    submitProblemButton.show();
+    context.subscriptions.push(submitProblemButton);
 }
 
 export function deactivate() {}
