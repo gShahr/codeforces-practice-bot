@@ -2,10 +2,12 @@
 // Import the module and reference it with the alias vscode in your code below
 import * as vscode from 'vscode';
 import axios from 'axios';
+import { AxiosResponse, AxiosRequestConfig } from "axios";
 import * as cheerio from 'cheerio';
 import * as dotenv from 'dotenv';
 import * as path from 'path';
-import qs from 'qs';
+import * as fs from 'fs';
+import { submitSolution } from './submit';
 
 // Load environment variables from .env file
 const envPath = path.resolve(process.cwd(), '.env');
@@ -203,125 +205,33 @@ export function activate(context: vscode.ExtensionContext) {
             } else {
                 vscode.window.showErrorMessage('No problem links found.');
             }
+            const contestId = data[0].contestId;
+            const problemId = data[0].index;
+            const dirPath = path.join(vscode.workspace.rootPath || '', `${contestId}`);
+            const filePath = path.join(dirPath, `${problemId}.cpp`);
+            console.log(dirPath);
+            if (!fs.existsSync(dirPath)) {
+                fs.mkdirSync(dirPath, { recursive: true });
+            }
+            if (!fs.existsSync(filePath)) {
+                const template = `// Problem: ${problemId} from contest ${contestId}\n#include <iostream>\n\nint main() {\n    // Your code here\n    return 0;\n}`;
+                fs.writeFileSync(filePath, template);
+            }
         } catch (error) {
             vscode.window.showErrorMessage('An error occurred while fetching the problem.');
             console.error(error);
         }
     });
 
-    interface Data {
-        handleOrEmail: string;
-        password: string;
-        lastUpdate: number;
-        cookie: string | null;
-        csrfToken: string | null;
-        compileCommand: string;
-        templateFile: string;
-        templateLineNo: number;
-        submitCompiler: number;
-    }
-
-    let data: Data = {
-        handleOrEmail: process.env.CODEFORCES_USERNAME || '',
-        password: process.env.CODEFORCES_PASSWORD || '',
-        lastUpdate: 1603880554122,
-        cookie: null,
-        csrfToken: null,
-        compileCommand: "g++-8 --std=c++14",
-        templateFile: "",
-        templateLineNo: 0,
-        submitCompiler: 54
-    };
-    const baseUrl = "https://codeforces.com";
-    interface Session {
-        cookie: string | null;
-        csrfToken: string | null;
-    }
-    let session: Session = {
-        cookie: null,
-        csrfToken: null,
-    };
-
-    async function login() {
-        const userHandle = data.handleOrEmail;
-        if (userHandle === null || userHandle === undefined || userHandle === '') {
-            return '';
-        }
-        if (!data || !data.cookie || data.cookie === '' || !data.lastUpdate || Date.now() - data.lastUpdate > 3600000) {
-            return getCsrfAndJid()
-            .then(() => {
-                return requestLogin();
-            })
-            .then(() => {
-                data.cookie = session.cookie!;
-                data.csrfToken = session.csrfToken;
-                data.lastUpdate = Date.now();
-                console.log("Time: "+data.lastUpdate);
-                // updateData(data);
-              return data.cookie;
-            });
-        } else {
-          return data.cookie;
-        }
-      }
-
-      function getCsrfAndJid() {
-        return axios
-        .get(baseUrl + "/enter")
-        .then((res: any) => {
-            session.cookie = res["headers"]["set-cookie"][0].split(";")[0];
-            const $ = cheerio.load(res.data);
-            const csrfTokenElement = $("meta[name='X-Csrf-Token']")[0] as cheerio.TagElement;
-            session.csrfToken = csrfTokenElement.attribs["content"];
-            console.log(session);
-          })
-          .catch((err: any) => {
-            console.log(err);
-          });
-      }
-
-      function requestLogin() {
-        console.log("Logging...");
-        const url = baseUrl + "/enter";
-        const user: { handleOrEmail: string, password: string } = {
-            handleOrEmail: process.env.CODEFORCES_USERNAME || '',
-            password: process.env.CODEFORCES_PASSWORD || '',
-        };
-        
-        const options = {
-            headers: {
-                "content-type": "application/x-www-form-urlencoded",
-                Cookie: session.cookie,
-            },
-        };
-        
-        const data = {
-            ...user,
-            csrf_token: session.csrfToken,
-            action: "enter",
-        };
-        
-        return axios
-            .post(url, qs.stringify(data), options)
-            .then((res: any) => {
-                const $ = cheerio.load(res.data);
-                const userId = $($(".lang-chooser a")[2]).html();
-                const csrfTokenElement = $("meta[name='X-Csrf-Token']")[0] as cheerio.TagElement;
-                session.csrfToken = csrfTokenElement.attribs["content"];
-                if (userId === 'Enter') {
-                    session.cookie = '';
-                    console.log("Failed to login user: "+user.handleOrEmail);
-                    return;
-                }      
-                console.log(`Login Successful. Welcome ${userId}!!!`);
-            })
-            .catch((err: any) => {
-                console.log(err);
-            });
-      }      
-
     const submitProblemDisposable = vscode.commands.registerCommand('codeforces-practice-bot.submitProblem', async () => {
-        login();
+        let username = process.env.CODEFORCES_USERNAME;
+        if (username === undefined) {
+            throw new Error("CODEFORCES_USERNAME environment variable is not set.");
+        }
+        let data = await getFiltered1600RatedProblems(username);
+        const contestId = data[0].contestId;
+        const problemId = data[0].index;    
+        await submitSolution(contestId, problemId);
     });
 
     context.subscriptions.push(loginDisposable);
