@@ -8,6 +8,7 @@ import * as dotenv from 'dotenv';
 import * as path from 'path';
 import * as fs from 'fs';
 import { submitSolution } from './submit';
+import login from './login';
 
 // Load environment variables from .env file
 const envPath = path.resolve(process.cwd(), '.env');
@@ -129,7 +130,6 @@ export function activate(context: vscode.ExtensionContext) {
             if (response.data.status !== 'OK') {
                 throw new Error('Failed to fetch problems');
             }
-    
             const problems: Problem[] = response.data.result.problems;
             const problemStatistics: ProblemStatistics[] = response.data.result.problemStatistics;
             const filteredProblems = problems
@@ -186,6 +186,7 @@ export function activate(context: vscode.ExtensionContext) {
                 throw new Error("CODEFORCES_USERNAME environment variable is not set.");
             }
             let data = await getFiltered1600RatedProblems(username);
+            console.log("User data while getting problem: " + data);
             const problemUrl = `https://codeforces.com/problemset/problem/${data[0].contestId}/${data[0].index}`;
 
             
@@ -223,13 +224,18 @@ export function activate(context: vscode.ExtensionContext) {
             const problemId = data[0].index;
             const dirPath = path.join(vscode.workspace.rootPath || '', `${contestId}`);
             const filePath = path.join(dirPath, `${problemId}.cpp`);
+            const templatePath = path.join(__dirname, '..', 'colored-debug-template.cpp');
             console.log(dirPath);
             if (!fs.existsSync(dirPath)) {
                 fs.mkdirSync(dirPath, { recursive: true });
             }
             if (!fs.existsSync(filePath)) {
-                const template = `// Problem: ${problemId} from contest ${contestId}\n#include <iostream>\n\nint main() {\n    // Your code here\n    return 0;\n}`;
-                fs.writeFileSync(filePath, template);
+                if (fs.existsSync(templatePath)) {
+                    const template = fs.readFileSync(templatePath, 'utf-8');
+                    fs.writeFileSync(filePath, template);
+                } else {
+                    console.log('Template file not found.');
+                }
             }
         } catch (error) {
             vscode.window.showErrorMessage('An error occurred while fetching the problem.');
