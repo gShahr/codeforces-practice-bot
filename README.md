@@ -69,3 +69,10 @@ You can author your README using Visual Studio Code. Here are some useful editor
 * [Markdown Syntax Reference](https://help.github.com/articles/markdown-basics/)
 
 **Enjoy!**
+
+Make it as strict as possible for the user interface. Fenyman had multiple problms he worked on but 
+codeforces only makes a subset of interesting problems I tackle so keeping it down to one problem
+that I funnel for practice works.
+
+Anything above 2000 solves is a good indicator for the types of problems we want to avoid (ie only accepts kotlin
+or made for a special purpose which is a smaller subset than competitive programming).

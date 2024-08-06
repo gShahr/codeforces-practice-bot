@@ -78,13 +78,10 @@ function requestLogin() {
     session.csrfToken = $("meta[name='X-Csrf-Token']")[0].attribs["content"];
     if(userId === 'Enter') {
         session.cookie = '';
-        //handleError("Failed to login user: "+user.handleOrEmail);
+        console.log("Failed to login user: "+user.handleOrEmail);
         return;
     }
-    console.log(`Login Successful. Welcome ${userId}!!!`);
-    // .catch((err: any) => {
-    //     //handleError(err);
-    // 
+    console.log(`Login Successful. Welcome ${userId}!!!`);    
     });
 }
 

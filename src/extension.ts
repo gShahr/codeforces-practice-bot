@@ -115,6 +115,12 @@ export function activate(context: vscode.ExtensionContext) {
         contestId: number;
         index: string;
     }
+
+    interface ProblemStatistics {
+        contestId: number;
+        index: string;
+        solvedCount: number;
+    }
     
     async function fetch1600RatedProblems(): Promise<Problem[]> {
         try {
@@ -125,8 +131,16 @@ export function activate(context: vscode.ExtensionContext) {
             }
     
             const problems: Problem[] = response.data.result.problems;
-            const filteredProblems = problems.filter((problem: Problem) => problem.rating === 1600);
-    
+            const problemStatistics: ProblemStatistics[] = response.data.result.problemStatistics;
+            const filteredProblems = problems
+            .filter((problem: Problem) => problem.rating === 1600)
+            .filter((problem: Problem) => {
+                const stats = problemStatistics.find(
+                    (stat: ProblemStatistics) => stat.contestId === problem.contestId && stat.index === problem.index
+                );
+                return stats && stats.solvedCount > 2000;
+            });
+
             return filteredProblems;
         } catch (error) {
             console.error('Error fetching problems:', error);
@@ -230,7 +244,7 @@ export function activate(context: vscode.ExtensionContext) {
         }
         let data = await getFiltered1600RatedProblems(username);
         const contestId = data[0].contestId;
-        const problemId = data[0].index;    
+        const problemId = data[0].index;
         await submitSolution(contestId, problemId);
     });
 

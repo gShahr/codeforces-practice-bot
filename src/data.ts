@@ -1,3 +1,20 @@
+import * as vscode from 'vscode';
+import axios from 'axios';
+import { AxiosResponse, AxiosRequestConfig } from "axios";
+import * as cheerio from 'cheerio';
+import * as dotenv from 'dotenv';
+import * as path from 'path';
+import * as fs from 'fs';
+import { submitSolution } from './submit';
+
+const envPath = path.resolve(process.cwd(), '.env');
+const pathNeeded = 'C:/Users/Gabriel_Shahrouzi/Documents/0-git-local-stuff/cs-projects/codeforces-practice-bot/codeforces-practice-bot/.env';
+dotenv.config({ path: pathNeeded });
+require('dotenv').config({path: pathNeeded});
+console.log(envPath);
+console.log('CODEFORCES_USERNAME:', process.env.CODEFORCES_USERNAME);
+
+
 let data = {
     handleOrEmail: process.env.CODEFORCES_USERNAME || '',
     password: process.env.CODEFORCES_PASSWORD || '',
@@ -15,6 +32,7 @@ let data = {
   }
   
   export function getData() {
+    console.log(data);
       return data;
   }
   
@@ -38,7 +56,6 @@ let data = {
       return data.csrfToken;
   }
   
-  
   export function setUser(userHandle: string | undefined, userPassword: string | undefined) {
   
       console.log('------', userHandle, userPassword);
@@ -55,7 +72,6 @@ let data = {
       return;
   }
   
-  
   export function getCompileCommand() {
       return data.compileCommand;
   }
@@ -68,16 +84,13 @@ let data = {
       return data.templateFile;
   }
   
-  
   export function setTemplateFile(templateFile: string) {
       return data.templateFile = templateFile;
   }
   
-  
   export function getTemplateLineNo() {
       return data.templateLineNo;
   }
-  
   
   export function setTemplateLineNo(templateLineNo: number) {
       return data.templateLineNo = templateLineNo;

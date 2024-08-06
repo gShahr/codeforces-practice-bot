@@ -10,6 +10,7 @@ instance.interceptors.request.use((config: InternalAxiosRequestConfig) => {
         if (!config.headers) {
             config.headers = new AxiosHeaders();
         }
+        console.log(cookie);
         config.headers.Cookie = cookie;
         return config;
     })

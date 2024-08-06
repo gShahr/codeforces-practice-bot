@@ -63,6 +63,7 @@ export async function submitSolution(contestIdIn: number, problemIdIn: string) {
       );
 
       if (userSelection !== "Submit") {
+        console.log("User did not select submit");
         return;
       }
 
@@ -88,7 +89,7 @@ async function submit() {
   const submitUrl = `/contest/${contestId}/submit`;
 
   const sol = FileHandler.readFile(solFile);
-  console.log(sol);
+  console.log("Solution follow: " + sol);
 
   if (!getCsrfToken()) {
     const logged = await login();
@@ -113,30 +114,26 @@ async function submit() {
     },
     data: form,
   };
-  console.log(options);
-
   return axios(options)
     .then((res: AxiosResponse) => {
-      const $ = cheerio.load(res.data);
-
-      const sameSourceDiv = $(".error.for__source");
-
-      if (sameSourceDiv.length > 0) {
-        console.error(
-          problemLabel + ": You have submitted exactly the same code before"
-        );
-        return null;
-      }
-
-      const submissionId = $("a.view-source").attr("submissionid");
-
-      console.log(submissionId);
-
-      return submissionId;
+        console.log("Response Status: ", res.status);
+        // console.log("Response Data: ", res.data);
+        // console.log("Response Headers: ", res.headers);
+        const $ = cheerio.load(res.data);
+        const sameSourceDiv = $(".error.for__source");
+        if (sameSourceDiv.length > 0) {
+            console.error(
+                problemLabel + ": You have submitted exactly the same code before"
+            );
+            return null;
+        }
+        const submissionId = $("a.view-source").attr("submissionid");
+        console.log("submissionID: " + submissionId);
+        return submissionId;
     })
     .catch((res: any) => {
-      console.error(res);
-      return null;
+        console.error(res);
+        return null;
     });
 }
 
