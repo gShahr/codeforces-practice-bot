@@ -1,8 +1,13 @@
+import { window } from "vscode";
+import * as puppeteer from 'puppeteer';
 import axios from "./axios";
 import { getCsrfToken, getSubmitCompiler, getUserHandle } from "./data";
-import { AxiosResponse, AxiosRequestConfig } from "axios";
+import { AxiosResponse, AxiosRequestConfig, get } from "axios";
 import login from "./login";
 import FileHandler from "./fileHandler";
+import { displayPage, displayTutorial } from './display';
+import * as fs from 'fs';
+import * as path from 'path';
 
 const cheerio = require("cheerio");
 const formData = require("form-data");
@@ -78,7 +83,9 @@ export async function submitSolution(contestIdIn: number, problemIdIn: string) {
 
       progress.report({ message: "TESTING...", increment: 30 });
       const verdict = await checkVerdict(parseInt(submissionId));
-
+      if (verdict === "OK") {
+        displayTutorialPage(contestId);
+      }
       console.log("verdict:" + verdict);
       return;
     }
@@ -155,12 +162,74 @@ async function checkVerdict(submissionId: number) {
   }
 
   if (verdict === "OK") {
+    window.showInformationMessage( problemLabel + ": Solution Passed");
     console.log(problemLabel + ": Solution Passed");
   } else {
+    window.showErrorMessage( problemLabel + ": Solution Failed:- " + verdict);
     console.error(problemLabel + ": Solution Failed:- " + verdict);
   }
 
   return verdict;
+}
+
+// async function displayTutorialPage(contestId: number) {
+//   const tutorialUrl = `https://codeforces.com/contest/${contestId}`;
+//   const open = require('open');
+//   await open(tutorialUrl);
+// }
+
+export async function getTutorialPage(contestId: number) {
+  const tutorialUrl = `https://codeforces.com/contest/${contestId}`;
+  const browser = await puppeteer.launch();
+  const page = await browser.newPage();
+  await page.goto(tutorialUrl);
+  logMessage(`TESTING: ${tutorialUrl}`);
+  await page.waitForSelector('a[title*="Editorial"]');
+  const link = await page.$('a[title*="Editorial"]');
+  if (link) {
+    const href = await page.evaluate((el) => el.getAttribute('href'), link);
+    console.log(`Found tutorial/editorial link: ${href}`);
+    logMessage(`Found tutorial/editorial link: ${href}`);
+    await browser.close();
+    return href;
+  } else {
+    console.error('No tutorial/editorial link found.');
+    logMessage(`No : tutorial/editorial link found.`);
+    await browser.close();
+    throw new Error('No tutorial/editorial link found.');
+  }
+}
+
+export async function getTutorialPageAxios(contestId: number): Promise<string | undefined> {
+  const tutorialUrl = `https://codeforces.com/contest/${contestId}`;
+  try {
+    const response = await axios.get(tutorialUrl);
+    const html = response.data;
+    const $ = cheerio.load(html);
+    logMessage(`TESTING: ${tutorialUrl}`);
+    
+    const link = $('a[title*="Editorial"]').attr('href');
+    if (link) {
+      console.log(`Found tutorial/editorial link: ${link}`);
+      logMessage(`Found tutorial/editorial link: ${link}`);
+      return link;
+    } else {
+      console.error('No tutorial/editorial link found.');
+      logMessage('No tutorial/editorial link found.');
+      throw new Error('No tutorial/editorial link found.');
+    }
+  } catch (error) {
+    console.error('Error fetching the tutorial page:', error);
+    logMessage(`Error fetching the tutorial page: ${error}`);
+    throw error;
+  }
+}
+
+export async function displayTutorialPage(contestId: number) {
+  const href = await getTutorialPage(contestId);
+  const URL = `https://codeforces.com${href}`;
+  console.log(`Opening tutorial/editorial page: ${URL}`);
+  await displayTutorial(URL);
 }
 
 async function wait(ms: number) {
@@ -192,4 +261,10 @@ function showErrorMessage(message: string, ...items: string[]): Promise<string |
 function showInformationMessage(message: string, ...items: string[]): Promise<string | undefined> {
   console.log(message);
   return Promise.resolve(items[0]);
+}
+
+function logMessage(message: string) {
+  const logFilePath = path.join(__dirname, 'log.txt');
+  console.log(message);
+  fs.appendFileSync(logFilePath, message + '\n', 'utf8');
 }
