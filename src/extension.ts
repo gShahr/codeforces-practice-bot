@@ -7,8 +7,9 @@ import * as cheerio from 'cheerio';
 import * as dotenv from 'dotenv';
 import * as path from 'path';
 import * as fs from 'fs';
-import { submitSolution } from './submit';
+import { getTutorialPage, submitSolution, displayTutorialPage } from './submit';
 import login from './login';
+import {displayPage} from './display';
 
 // Load environment variables from .env file
 const envPath = path.resolve(process.cwd(), '.env');
@@ -66,42 +67,6 @@ export function activate(context: vscode.ExtensionContext) {
             vscode.window.showErrorMessage('Username or password cannot be empty.');
         }
     });
-
-    function getWebviewContent(problemContent: string, cssContent: string): string {
-        return `<!DOCTYPE html>
-        <html lang="en">
-        <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>Codeforces Problem</title>
-            <style>
-                ${cssContent}
-            </style>
-            <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
-            <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
-            <script>
-                window.MathJax = {
-                    tex: {
-                        inlineMath: [['$', '$'], ['\\(', '\\)']]
-                    },
-                    svg: {
-                        fontCache: 'global'
-                    }
-                };
-            </script>
-        </head>
-        <body>
-            <div class="problem-statement">
-                ${problemContent}
-            </div>
-            <script>
-                document.addEventListener("DOMContentLoaded", function() {
-                    MathJax.typesetPromise();
-                });
-            </script>
-        </body>
-        </html>`;
-    }
 
     interface Problem {
         contestId: number;
@@ -181,67 +146,45 @@ export function activate(context: vscode.ExtensionContext) {
 
     const getProblemDisposable = vscode.commands.registerCommand('codeforces-practice-bot.getProblem', async () => {
         try {
-            let username = process.env.CODEFORCES_USERNAME;
-            if (username === undefined) {
-                throw new Error("CODEFORCES_USERNAME environment variable is not set.");
-            }
-            let data = await getFiltered1600RatedProblems(username);
-            console.log("User data while getting problem: " + data);
+            const username = getUsername();
+            const data = await getFiltered1600RatedProblems(username);
             const problemUrl = `https://codeforces.com/problemset/problem/${data[0].contestId}/${data[0].index}`;
-
-            
-            if (problemUrl) {
-                const problemResponse = await axios.get(problemUrl);
-                const problemPage = cheerio.load(problemResponse.data);
-                let problemContent = problemPage('.problem-statement').html();
     
-                if (problemContent) {
-                    problemContent = problemContent.replace(/\$\$\$/g, '$$').replace(/\\\$/g, '$');
-                    console.log(problemContent);
-
-                    // Fetch the CSS from Codeforces
-                    const cssResponse = await axios.get('https://codeforces.com/css/problem-statement.css');
-                    const cssContent = cssResponse.data;
-    
-                const panel = vscode.window.createWebviewPanel(
-                    'codeforcesProblem',
-                    'Codeforces Problem',
-                    vscode.ViewColumn.One,
-                    {
-                        enableScripts: true
-                    }
-                );
-    
-                    // Set the HTML content
-                    panel.webview.html = getWebviewContent(problemContent, cssContent);
-                } else {
-                    vscode.window.showErrorMessage('Failed to extract problem content.');
-                }
-            } else {
-                vscode.window.showErrorMessage('No problem links found.');
-            }
+            displayPage(problemUrl);
             const contestId = data[0].contestId;
             const problemId = data[0].index;
-            const dirPath = path.join(vscode.workspace.rootPath || '', `${contestId}`);
-            const filePath = path.join(dirPath, `${problemId}.cpp`);
-            const templatePath = path.join(__dirname, '..', 'colored-debug-template.cpp');
-            console.log(dirPath);
-            if (!fs.existsSync(dirPath)) {
-                fs.mkdirSync(dirPath, { recursive: true });
-            }
-            if (!fs.existsSync(filePath)) {
-                if (fs.existsSync(templatePath)) {
-                    const template = fs.readFileSync(templatePath, 'utf-8');
-                    fs.writeFileSync(filePath, template);
-                } else {
-                    console.log('Template file not found.');
-                }
-            }
+            setupProblemFile(contestId, problemId);
         } catch (error) {
             vscode.window.showErrorMessage('An error occurred while fetching the problem.');
             console.error(error);
         }
     });
+    
+    function getUsername(): string {
+        const username = process.env.CODEFORCES_USERNAME;
+        if (username === undefined) {
+            throw new Error("CODEFORCES_USERNAME environment variable is not set.");
+        }
+        return username;
+    }
+    
+    function setupProblemFile(contestId: number, problemId: string) {
+        const dirPath = path.join(vscode.workspace.rootPath || '', `${contestId}`);
+        const filePath = path.join(dirPath, `${problemId}.cpp`);
+        const templatePath = path.join(__dirname, '..', 'colored-debug-template.cpp');
+        console.log(dirPath);
+        if (!fs.existsSync(dirPath)) {
+            fs.mkdirSync(dirPath, { recursive: true });
+        }
+        if (!fs.existsSync(filePath)) {
+            if (fs.existsSync(templatePath)) {
+                const template = fs.readFileSync(templatePath, 'utf-8');
+                fs.writeFileSync(filePath, template);
+            } else {
+                console.log('Template file not found.');
+            }
+        }
+    }
 
     const submitProblemDisposable = vscode.commands.registerCommand('codeforces-practice-bot.submitProblem', async () => {
         let username = process.env.CODEFORCES_USERNAME;
